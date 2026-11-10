@@ -10,7 +10,7 @@
   (version "1.0.0")
   (report-date "2025-12-29")
   (project "thejeffparadox")
-  (repository "https://github.com/hyperpolymath/thejeffparadox")
+  (repository "https://github.com/catachresis-colloquium/thejeffparadox")
   (branch "main"))
 
  (environment

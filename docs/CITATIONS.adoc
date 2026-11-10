@@ -11,26 +11,26 @@
   author = {Polymath, Hyper},
   title = {thejeffparadox},
   year = {2025},
-  url = {https://github.com/hyperpolymath/thejeffparadox},
+  url = {https://github.com/catachresis-colloquium/thejeffparadox},
   license = {MPL-2.0}
 }
 ----
 
 == Harvard Style
 
-Polymath, H. (2025) _thejeffparadox_ [Computer software]. Available at: https://github.com/hyperpolymath/thejeffparadox
+Polymath, H. (2025) _thejeffparadox_ [Computer software]. Available at: https://github.com/catachresis-colloquium/thejeffparadox
 
 == OSCOLA
 
-Hyper Polymath, 'thejeffparadox' (2025) <https://github.com/hyperpolymath/thejeffparadox>
+Hyper Polymath, 'thejeffparadox' (2025) <https://github.com/catachresis-colloquium/thejeffparadox>
 
 == MLA
 
-Polymath, Hyper. "thejeffparadox." 2025, github.com/hyperpolymath/thejeffparadox.
+Polymath, Hyper. "thejeffparadox." 2025, github.com/catachresis-colloquium/thejeffparadox.
 
 == APA 7
 
-Polymath, H. (2025). _thejeffparadox_ [Computer software]. GitHub. https://github.com/hyperpolymath/thejeffparadox
+Polymath, H. (2025). _thejeffparadox_ [Computer software]. GitHub. https://github.com/catachresis-colloquium/thejeffparadox
 
 == See Also
 
