@@ -1,6 +1,6 @@
 == Clone the repository
 
-git clone https://github.com/hyperpolymath/thejeffparadox.git cd
+git clone https://github.com/catachresis-colloquium/thejeffparadox.git cd
 thejeffparadox
 
 == Install Julia dependencies
@@ -81,10 +81,10 @@ Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md) an
 
 Look for issues labelled:
 
-- [`good first issue`](https://github.com/hyperpolymath/thejeffparadox/labels/good%20first%20issue) — Simple Perimeter 3 tasks
-- [`help wanted`](https://github.com/hyperpolymath/thejeffparadox/labels/help%20wanted) — Community help needed
-- [`documentation`](https://github.com/hyperpolymath/thejeffparadox/labels/documentation) — Docs improvements
-- [`perimeter-3`](https://github.com/hyperpolymath/thejeffparadox/labels/perimeter-3) — Community sandbox scope
+- [`good first issue`](https://github.com/catachresis-colloquium/thejeffparadox/labels/good%20first%20issue) — Simple Perimeter 3 tasks
+- [`help wanted`](https://github.com/catachresis-colloquium/thejeffparadox/labels/help%20wanted) — Community help needed
+- [`documentation`](https://github.com/catachresis-colloquium/thejeffparadox/labels/documentation) — Docs improvements
+- [`perimeter-3`](https://github.com/catachresis-colloquium/thejeffparadox/labels/perimeter-3) — Community sandbox scope
 
 ---
 
