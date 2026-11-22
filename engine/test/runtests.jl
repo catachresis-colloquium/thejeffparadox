@@ -469,6 +469,13 @@ using JeffEngine
             empty_json = """{"content":[]}"""
             @test JeffEngine.parse_response("anthropic", empty_json) == ""
 
+            # Thinking block before the text (current models)
+            thinking_json = """{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"after thinking"}]}"""
+            @test JeffEngine.parse_response("anthropic", thinking_json) == "after thinking"
+
+            # Refusal fails loudly
+            @test_throws ErrorException JeffEngine.parse_response("anthropic", """{"stop_reason":"refusal","content":[]}""")
+
             # OpenAI format
             openai_json = """{"choices":[{"message":{"content":"hello from mistral"}}]}"""
             @test JeffEngine.parse_response("mistral", openai_json) == "hello from mistral"

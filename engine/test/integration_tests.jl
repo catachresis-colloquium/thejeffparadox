@@ -260,11 +260,14 @@ using JeffEngine
         ]
 
         # Anthropic format separates system message
-        body_anthropic = build_request_body("anthropic", "claude-test", messages, 0.7, 512)
+        body_anthropic = build_request_body("anthropic", "claude-sonnet-4-6", messages, 0.7, 512)
         parsed = JSON3.read(body_anthropic)
         @test haskey(parsed, "system")
-        @test parsed["model"] == "claude-test"
+        @test parsed["model"] == "claude-sonnet-4-6"
         @test parsed["temperature"] == 0.7
+
+        # Models that reject temperature must not be sent it
+        @test !haskey(JSON3.read(build_request_body("anthropic", "claude-sonnet-5-5", messages, 0.7, 512)), "temperature")
         @test parsed["max_tokens"] == 512
 
         # OpenAI-compatible format keeps system in messages array

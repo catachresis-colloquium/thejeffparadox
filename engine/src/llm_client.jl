@@ -43,10 +43,15 @@ const PROVIDERS = Dict(
 
 # Default model names per provider — override via GM_MODEL env var
 const DEFAULT_MODELS = Dict(
-    "anthropic" => "claude-sonnet-4-20250514",
+    "anthropic" => "claude-opus-5-5",
     "mistral" => "mistral-large-latest",
     "local" => "qwen/qwen3-8b"
 )
+
+# Claude models that still accept a custom `temperature`. Newer models
+# (Opus 4.7+, Sonnet 5+, Haiku 5.5, Fable) return 400 on it, so it is sent only
+# to these. snip: allowlist, so an unknown model is never sent temperature.
+const ANTHROPIC_TEMPERATURE_MODELS = ("claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5")
 
 # ============================================================================
 # Request Building
@@ -180,12 +185,14 @@ function build_request_body(
             end
         end
 
-        body = Dict(
+        body = Dict{String,Any}(
             "model" => model,
             "max_tokens" => max_tokens,
-            "temperature" => temperature,
             "messages" => chat_messages
         )
+        if model in ANTHROPIC_TEMPERATURE_MODELS
+            body["temperature"] = temperature
+        end
 
         if !isempty(system_msg)
             body["system"] = system_msg
@@ -213,10 +220,16 @@ function parse_response(provider::String, response_body::String)::String
     data = JSON3.read(response_body)
 
     if provider == "anthropic"
-        # Anthropic returns content array
-        content = data["content"]
-        if !isempty(content)
-            return content[1]["text"]
+        # snip:prod — a refusal is HTTP 200 with no usable text; fail loudly
+        if get(data, "stop_reason", nothing) == "refusal"
+            error("anthropic: model refused the request (stop_reason=refusal)")
+        end
+        # Content is an array of blocks; newer models put a thinking block
+        # before the text, so take the first text block.
+        for block in get(data, "content", [])
+            if get(block, "type", "text") == "text"
+                return block["text"]
+            end
         end
         return ""
     else
