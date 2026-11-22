@@ -1,0 +1,19 @@
+diversity_injection_counter: 0
+current_node: "beta"
+faction_slider: -2
+pattern_quarantine:
+  - "the way you"
+  - "the resonance door"
+  - "pulse behind our"
+  - "i let the"
+  - "then i turn"
+  - "warmth, a far"
+  - "a far lamp"
+  - "warmth, a far lamp"
+  - "resonance door dimmed"
+  - "the resonance door dimmed"
+  - "alpha sends a"
+turn_number: 53
+chaos: 100
+exposure: 16
+last_diversity_turn: 50
