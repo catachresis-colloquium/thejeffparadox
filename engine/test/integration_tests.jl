@@ -44,7 +44,9 @@ using JeffEngine
             llm_provider = "local",
             llm_model = "test-model",
             temperature = 0.8,
-            context_turns = 20
+            context_turns = 20,
+            thinking = "default",
+            max_tokens = 1024
         )
     end
 

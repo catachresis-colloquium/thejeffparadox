@@ -82,6 +82,8 @@ mutable struct NodeState
     temperature::Float64
     revealed_to_other::Set{String}  # What this node has revealed about itself
     context_turns::Int  # How many recent turns this node sees
+    thinking::String    # "default" (model default) or "off"
+    max_tokens::Int     # Includes thinking tokens
 end
 
 """
@@ -192,7 +194,9 @@ function initialise_node_state(node_path::String)::NodeState
         llm["model"],
         llm["temperature"],
         Set{String}(),
-        get(llm, "context_turns", 20)
+        get(llm, "context_turns", 20),
+        get(llm, "thinking", "default"),
+        get(llm, "max_tokens", 1024)
     )
 end
 

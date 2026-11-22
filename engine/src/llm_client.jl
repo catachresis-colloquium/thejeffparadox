@@ -63,6 +63,23 @@ const ANTHROPIC_TEMPERATURE_MODELS = ("claude-sonnet-4-6", "claude-sonnet-4-5", 
 Validate that a provider is configured and has an API key set.
 Throws ArgumentError for unknown providers and warns for missing keys.
 """
+# Token meter: USAGE[(tag, model)] = [input, output]. The tag is the task-local
+# :jeff_game (one per game), so concurrent games are counted apart.
+const USAGE = Dict{Tuple{String,String},Vector{Int}}()
+# USD per million tokens (input, output). snip: only models used in runs so far;
+# usage_cost errors on others, so a cost is never guessed.
+const PRICES = Dict("claude-sonnet-5-5" => (2.0, 10.0))
+
+function record_usage!(model::String, usage)
+    usage === nothing && return
+    tag = get(task_local_storage(), :jeff_game, "")
+    u = get!(USAGE, (tag, model), [0, 0])
+    u[1] += get(usage, "input_tokens", 0) + get(usage, "cache_creation_input_tokens", 0) + get(usage, "cache_read_input_tokens", 0)
+    u[2] += get(usage, "output_tokens", 0)
+end
+
+usage_cost(tag::String)::Float64 = sum((u[1] * PRICES[m][1] + u[2] * PRICES[m][2]) / 1e6 for ((t, m), u) in USAGE if t == tag; init=0.0)
+
 # snip: cloud sessions withhold ANTHROPIC_API_KEY, so JEFF_ANTHROPIC_API_KEY wins when it is set.
 function read_key(env::String)::String
     k = env == "ANTHROPIC_API_KEY" ? get(ENV, "JEFF_ANTHROPIC_API_KEY", "") : ""
@@ -175,7 +192,8 @@ function build_request_body(
     model::String,
     messages::Vector{Dict{String,String}},
     temperature::Float64,
-    max_tokens::Int
+    max_tokens::Int;
+    thinking::String="default"
 )::String
 
     if provider == "anthropic"
@@ -198,6 +216,11 @@ function build_request_body(
         )
         if model in ANTHROPIC_TEMPERATURE_MODELS
             body["temperature"] = temperature
+        end
+        # "off" matters only for models that think by default. Sonnet 5.5
+        # rejects "disabled" and uses "between_tools" for no thinking.
+        if thinking == "off"
+            body["thinking"] = Dict("type" => model == "claude-sonnet-5-5" ? "between_tools" : "disabled")
         end
 
         if !isempty(system_msg)
@@ -230,14 +253,16 @@ function parse_response(provider::String, response_body::String)::String
         if get(data, "stop_reason", nothing) == "refusal"
             error("anthropic: model refused the request (stop_reason=refusal)")
         end
+        record_usage!(get(data, "model", "unknown"), get(data, "usage", nothing))
         # Content is an array of blocks; newer models put a thinking block
         # before the text, so take the first text block.
         for block in get(data, "content", [])
-            if get(block, "type", "text") == "text"
+            if get(block, "type", "text") == "text" && !isempty(strip(block["text"]))
                 return block["text"]
             end
         end
-        return ""
+        # snip:prod, thinking can use all of max_tokens; an empty turn must not be saved as data
+        error("anthropic: reply has no text (stop_reason=$(get(data, "stop_reason", "unknown")))")
     else
         # OpenAI-compatible format
         choices = data["choices"]
@@ -266,7 +291,8 @@ function call_llm(
     messages::Vector{Dict{String,String}},
     temperature::Float64,
     max_tokens::Int;
-    retries::Int=3
+    retries::Int=3,
+    thinking::String="default"
 )::String
 
     validate_provider(provider)
@@ -274,7 +300,7 @@ function call_llm(
     config = PROVIDERS[provider]
     url = config.base_url * config.chat_endpoint
     headers = build_headers(provider)
-    body = build_request_body(provider, model, messages, temperature, max_tokens)
+    body = build_request_body(provider, model, messages, temperature, max_tokens; thinking=thinking)
 
     last_error = nothing
 
@@ -449,6 +475,7 @@ function generate_response(
         provider = node.llm_provider
         model = node.llm_model
         temperature = node.temperature
+        thinking, max_tokens = node.thinking, node.max_tokens
     else
         # GM defaults - prefer cloud providers over local
         if !isempty(read_key("ANTHROPIC_API_KEY"))
@@ -458,8 +485,12 @@ function generate_response(
         else
             provider = get(ENV, "GM_PROVIDER", "local")
         end
-        model = get(ENV, "GM_MODEL", DEFAULT_MODELS[provider])
+        # A game's config overrides the GM_* variables, so games in one process can differ.
+        cfg = game === nothing ? Dict() : game.config
+        model = get(cfg, "gm_model", get(ENV, "GM_MODEL", DEFAULT_MODELS[provider]))
         temperature = 0.7
+        thinking = get(cfg, "gm_thinking", get(ENV, "GM_THINKING", "default"))
+        max_tokens = get(cfg, "gm_max_tokens", parse(Int, get(ENV, "GM_MAX_TOKENS", "1024")))
     end
 
     # Apply aperture control when game state is available
@@ -478,5 +509,5 @@ function generate_response(
             "What do you do next?" : "Narrate the consequences.")
     ]
 
-    call_llm(provider, model, messages, temperature, 1024)
+    call_llm(provider, model, messages, temperature, max_tokens; thinking=thinking)
 end
