@@ -43,16 +43,9 @@ function main()
     end
 
     # Load node states
-    alpha_path = joinpath(base_dir, "node-alpha", "data", "node_state.yml")
-    beta_path = joinpath(base_dir, "node-beta", "data", "node_state.yml")
-
-    if !isfile(alpha_path) || !isfile(beta_path)
-        error("Node state files not found. Expected:\n  $alpha_path\n  $beta_path")
-    end
-
-    alpha = initialise_node_state(alpha_path)
-    beta = initialise_node_state(beta_path)
-    nodes = Dict(:alpha => alpha, :beta => beta)
+    nodes = JeffEngine.load_nodes(base_dir)
+    println("Personas: $(join(sort(collect(keys(nodes))), ", "))")
+    haskey(nodes, game.current_node) || (game.current_node = minimum(keys(nodes)))
 
     # Force node if specified
     if force_node != "auto"
@@ -72,6 +65,8 @@ function main()
     println("Current node: $(game.current_node)")
     println("="^60 * "\n")
 
+    haskey(nodes, game.current_node) || error("Unknown persona '$(game.current_node)'. Personas: $(join(sort(collect(keys(nodes))), ", "))")
+    node_id = String(game.current_node)
     result = execute_turn(game, nodes)
 
     # Save state
@@ -88,7 +83,7 @@ function main()
     println("Turn saved to $orch_path")
 
     # Save to node
-    node_dir = result.node_name == "Alpha" ? "node-alpha" : "node-beta"
+    node_dir = "node-$(node_id)"
     node_path = joinpath(base_dir, node_dir, "content", "turns", turn_filename)
     mkpath(dirname(node_path))
     save_turn_to_markdown(result, node_path)

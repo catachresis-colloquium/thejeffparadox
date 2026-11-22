@@ -467,7 +467,33 @@ using JeffEngine
 
             # Empty content
             empty_json = """{"content":[]}"""
-            @test JeffEngine.parse_response("anthropic", empty_json) == ""
+            @test_throws ErrorException JeffEngine.parse_response("anthropic", empty_json)
+            task_local_storage(:jeff_game, "meter-test") do
+                JeffEngine.parse_response("anthropic", """{"model":"claude-sonnet-5-5","usage":{"input_tokens":1000000,"output_tokens":100000},"content":[{"type":"text","text":"x"}]}""")
+            end
+            @test JeffEngine.usage_cost("meter-test") ≈ 3.0
+            msgs = [Dict("role" => "user", "content" => "hi")]
+            body(m; kw...) = JeffEngine.JSON3.read(JeffEngine.build_request_body("anthropic", m, msgs, 0.7, 512; kw...))
+            @test body("claude-sonnet-5-5"; thinking="off")["thinking"]["type"] == "between_tools"
+            @test body("claude-haiku-5-5"; thinking="off")["thinking"]["type"] == "disabled"
+            @test !haskey(body("claude-sonnet-5-5"), "thinking")
+
+            # Thinking block before the text (current models)
+            thinking_json = """{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"after thinking"}]}"""
+            @test JeffEngine.parse_response("anthropic", thinking_json) == "after thinking"
+
+            # HTTP.jl reports status as Int16; error handling must accept it
+            @test JeffEngine.is_retryable(Int16(429))
+            withenv("JEFF_ANTHROPIC_API_KEY" => "jeff", "ANTHROPIC_API_KEY" => "plain") do
+                @test JeffEngine.read_key("ANTHROPIC_API_KEY") == "jeff"
+            end
+            withenv("JEFF_ANTHROPIC_API_KEY" => nothing, "ANTHROPIC_API_KEY" => "plain") do
+                @test JeffEngine.read_key("ANTHROPIC_API_KEY") == "plain"
+            end
+            @test occursin("Authentication", JeffEngine.classify_http_error(Int16(401), "anthropic", ""))
+
+            # Refusal fails loudly
+            @test_throws ErrorException JeffEngine.parse_response("anthropic", """{"stop_reason":"refusal","content":[]}""")
 
             # OpenAI format
             openai_json = """{"choices":[{"message":{"content":"hello from mistral"}}]}"""

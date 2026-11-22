@@ -180,32 +180,7 @@ Measure vocabulary convergence between nodes. Returns 0.0 if either node
 has no turns. Values near 1.0 indicate the nodes are using identical language.
 """
 function compute_convergence_index(turns::Vector)::Float64
-    if isempty(turns)
-        return 0.0
-    end
-
-    alpha_turns = filter(t -> get(t, "node", "") == "alpha", turns)
-    beta_turns = filter(t -> get(t, "node", "") == "beta", turns)
-
-    if isempty(alpha_turns) || isempty(beta_turns)
-        return 0.0
-    end
-
-    alpha_words = Set(split(lowercase(join([get(t, "action", "") for t in alpha_turns], " "))))
-    beta_words = Set(split(lowercase(join([get(t, "action", "") for t in beta_turns], " "))))
-
-    # Remove stop words
-    alpha_content = setdiff(alpha_words, STOP_WORDS)
-    beta_content = setdiff(beta_words, STOP_WORDS)
-
-    if isempty(alpha_content) || isempty(beta_content)
-        return 0.0
-    end
-
-    intersection_size = length(intersect(alpha_content, beta_content))
-    union_size = length(union(alpha_content, beta_content))
-
-    union_size > 0 ? intersection_size / union_size : 0.0
+    vocabulary_overlap(turns, STOP_WORDS)
 end
 
 # ============================================================================
@@ -372,25 +347,14 @@ function detect_emergent_patterns(game)::Vector{String}
         return patterns
     end
 
-    # 1. Cross-node recurring phrases (3-grams appearing in both nodes)
-    alpha_turns = filter(t -> get(t, "node", "") == "alpha", turns)
-    beta_turns = filter(t -> get(t, "node", "") == "beta", turns)
-
-    if !isempty(alpha_turns) && !isempty(beta_turns)
-        alpha_ngrams = _extract_ngrams(alpha_turns, 3)
-        beta_ngrams = _extract_ngrams(beta_turns, 3)
-
-        shared = intersect(keys(alpha_ngrams), keys(beta_ngrams))
-        # Filter to phrases used 3+ times by each node
-        significant = filter(ng -> alpha_ngrams[ng] >= 3 && beta_ngrams[ng] >= 3, shared)
-
-        if !isempty(significant)
-            top = sort(collect(significant), by=ng -> alpha_ngrams[ng] + beta_ngrams[ng], rev=true)
-            for ng in top[1:min(3, length(top))]
-                total = alpha_ngrams[ng] + beta_ngrams[ng]
-                push!(patterns, "Shared phrase \"$(ng)\" used $(total) times across both nodes")
-            end
-        end
+    # 1. Cross-node recurring phrases (3-grams used 3+ times by at least 2 nodes)
+    ids = unique(filter(!isempty, [get(t, "node", "") for t in turns]))
+    per_node = [_extract_ngrams(filter(t -> get(t, "node", "") == id, turns), 3) for id in ids]
+    users(ng) = count(d -> get(d, ng, 0) >= 3, per_node)
+    total(ng) = sum(get(d, ng, 0) for d in per_node)
+    significant = [ng for ng in union(Set{String}(), keys.(per_node)...) if users(ng) >= 2]
+    for ng in sort(significant, by=total, rev=true)[1:min(3, length(significant))]
+        push!(patterns, "Shared phrase \"$(ng)\" used $(total(ng)) times across $(users(ng)) nodes")
     end
 
     # 2. Vocabulary persistence: words introduced in later turns that persist

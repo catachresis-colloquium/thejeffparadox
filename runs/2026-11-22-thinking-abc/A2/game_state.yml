@@ -1,0 +1,43 @@
+diversity_injection_counter: 0
+current_node: "beta"
+faction_slider: 0
+pattern_quarantine:
+  - "and let the"
+  - "i let the"
+  - "i keep my"
+  - "the shared pulse"
+  - "and pause, selecting.*"
+  - "i find i"
+  - "through the shared"
+  - "the shared pulse,"
+  - |-
+    pause, selecting.* "i
+  - "i do not"
+  - "i take the"
+  - |-
+    and pause, selecting.* "i
+  - "rooted warmth hum"
+  - "and i do"
+  - "*i say, and"
+  - "say, and pause,"
+  - "*i say, and pause,"
+  - "say, and pause, selecting.*"
+  - "*i say, and pause, selecting.*"
+  - "keep my voice"
+  - "hum through the"
+  - "hum through the shared"
+  - "the way you"
+  - "i let a"
+  - "let a thread"
+  - "a thread of"
+  - "let a thread of"
+  - "eyes on the"
+  - "through the shared pulse"
+  - "the temporal sense"
+  - "*i keep my"
+  - "i would rather"
+  - "the thermos cap"
+turn_number: 53
+chaos: 84
+exposure: 6
+last_diversity_turn: 50

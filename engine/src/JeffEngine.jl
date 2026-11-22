@@ -81,6 +81,9 @@ mutable struct NodeState
     llm_model::String
     temperature::Float64
     revealed_to_other::Set{String}  # What this node has revealed about itself
+    context_turns::Int  # How many recent turns this node sees
+    thinking::String    # "default" (model default) or "off"
+    max_tokens::Int     # Includes thinking tokens
 end
 
 """
@@ -190,8 +193,33 @@ function initialise_node_state(node_path::String)::NodeState
         llm["provider"],
         llm["model"],
         llm["temperature"],
-        Set{String}()
+        Set{String}(),
+        get(llm, "context_turns", 20),
+        get(llm, "thinking", "default"),
+        get(llm, "max_tokens", 1024)
     )
+end
+
+"""
+    load_nodes(base_dir) -> Dict{Symbol,NodeState}
+
+Load every persona from `node-<id>/data/node_state.yml`. The id is the
+directory suffix, so `node-gamma/` adds persona `:gamma`.
+"""
+function load_nodes(base_dir::String)::Dict{Symbol,NodeState}
+    nodes = Dict{Symbol,NodeState}()
+    for d in readdir(base_dir)
+        path = joinpath(base_dir, d, "data", "node_state.yml")
+        startswith(d, "node-") && isfile(path) && (nodes[Symbol(d[6:end])] = initialise_node_state(path))
+    end
+    length(nodes) >= 2 || error("Need at least 2 personas (node-*/data/node_state.yml) in $base_dir")
+    nodes
+end
+
+# Round-robin in sorted id order. With :alpha and :beta this is the old alternation.
+function next_node(current::Symbol, ids)::Symbol
+    order = sort(collect(ids))
+    order[mod1(something(findfirst(==(current), order), 0) + 1, length(order))]
 end
 
 # ============================================================================
@@ -205,11 +233,11 @@ Execute a single turn of the conversation.
 """
 function execute_turn(game::GameState, nodes::Dict{Symbol,NodeState})::TurnResult
     current = nodes[game.current_node]
-    other_symbol = game.current_node == :alpha ? :beta : :alpha
-    other = nodes[other_symbol]
+    next_symbol = next_node(game.current_node, keys(nodes))
+    others = [nodes[k] for k in sort(collect(keys(nodes))) if k != game.current_node]
 
     # Build context for current node
-    context = build_context(game, current, other)
+    context = build_context(game, current, others)
 
     # Check for diversity injection
     diversity_prompt = ""
@@ -271,8 +299,8 @@ function execute_turn(game::GameState, nodes::Dict{Symbol,NodeState})::TurnResul
     metrics = compute_metrics(game)
     push!(game.metrics_history, metrics)
 
-    # Switch to other node
-    game.current_node = other_symbol
+    # Switch to the next node
+    game.current_node = next_symbol
 
     TurnResult(
         game.turn_number,

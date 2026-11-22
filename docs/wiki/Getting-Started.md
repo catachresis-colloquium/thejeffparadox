@@ -129,9 +129,22 @@ node:
 
 llm:
   provider: "anthropic"  # or "mistral", "local"
-  model: "claude-sonnet-4-20250514"
-  temperature: 0.85
+  model: "claude-sonnet-5-5"
+  temperature: 0.85   # sent only to models that accept it (Sonnet 4.6/4.5, Opus 4.6/4.5, Haiku 4.5)
+  context_turns: 20   # optional: how many recent turns this persona sees
 ```
+
+Each persona has its own model and context, so one run can mix models, for example
+`claude-haiku-5-5`, `claude-haiku-4-5`, `claude-opus-5-5` or `claude-sonnet-4-6`.
+
+### Adding a Persona
+
+The engine loads every `node-<id>/data/node_state.yml`, and personas take turns in id order.
+To add a persona, copy `node-beta/` to `node-<id>/` (for example `node-gamma/`) and edit its
+`node_state.yml`. At least 2 personas are needed.
+
+In cloud sessions, store the API key as `JEFF_ANTHROPIC_API_KEY`. The engine reads it before
+`ANTHROPIC_API_KEY`.
 
 ### Game Configuration
 

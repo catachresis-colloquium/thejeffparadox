@@ -43,10 +43,15 @@ const PROVIDERS = Dict(
 
 # Default model names per provider — override via GM_MODEL env var
 const DEFAULT_MODELS = Dict(
-    "anthropic" => "claude-sonnet-4-20250514",
+    "anthropic" => "claude-sonnet-5-5",
     "mistral" => "mistral-large-latest",
     "local" => "qwen/qwen3-8b"
 )
+
+# Claude models that still accept a custom `temperature`. Newer models
+# (Opus 4.7+, Sonnet 5+, Haiku 5.5, Fable) return 400 on it, so it is sent only
+# to these. snip: allowlist, so an unknown model is never sent temperature.
+const ANTHROPIC_TEMPERATURE_MODELS = ("claude-sonnet-4-6", "claude-sonnet-4-5", "claude-opus-4-6", "claude-opus-4-5", "claude-haiku-4-5")
 
 # ============================================================================
 # Request Building
@@ -58,24 +63,47 @@ const DEFAULT_MODELS = Dict(
 Validate that a provider is configured and has an API key set.
 Throws ArgumentError for unknown providers and warns for missing keys.
 """
+# Token meter: USAGE[(tag, model)] = [input, output]. The tag is the task-local
+# :jeff_game (one per game), so concurrent games are counted apart.
+const USAGE = Dict{Tuple{String,String},Vector{Int}}()
+# USD per million tokens (input, output). snip: only models used in runs so far;
+# usage_cost errors on others, so a cost is never guessed.
+const PRICES = Dict("claude-sonnet-5-5" => (2.0, 10.0))
+
+function record_usage!(model::String, usage)
+    usage === nothing && return
+    tag = get(task_local_storage(), :jeff_game, "")
+    u = get!(USAGE, (tag, model), [0, 0])
+    u[1] += get(usage, "input_tokens", 0) + get(usage, "cache_creation_input_tokens", 0) + get(usage, "cache_read_input_tokens", 0)
+    u[2] += get(usage, "output_tokens", 0)
+end
+
+usage_cost(tag::String)::Float64 = sum((u[1] * PRICES[m][1] + u[2] * PRICES[m][2]) / 1e6 for ((t, m), u) in USAGE if t == tag; init=0.0)
+
+# snip: cloud sessions withhold ANTHROPIC_API_KEY, so JEFF_ANTHROPIC_API_KEY wins when it is set.
+function read_key(env::String)::String
+    k = env == "ANTHROPIC_API_KEY" ? get(ENV, "JEFF_ANTHROPIC_API_KEY", "") : ""
+    isempty(k) ? get(ENV, env, "") : k
+end
+
 function validate_provider(provider::String)
     if !haskey(PROVIDERS, provider)
         error("Unknown LLM provider '$(provider)'. Available: $(join(keys(PROVIDERS), ", "))")
     end
     config = PROVIDERS[provider]
-    api_key = get(ENV, config.key_env, "")
+    api_key = read_key(config.key_env)
     if isempty(api_key) && provider != "local"
         @warn "API key not set for provider '$(provider)'. Set $(config.key_env) environment variable."
     end
 end
 
 """
-    classify_http_error(status::Int, provider::String, body::String) -> String
+    classify_http_error(status::Integer, provider::String, body::String) -> String
 
 Return a human-readable error description for an HTTP status code,
 including provider-specific error details when available.
 """
-function classify_http_error(status::Int, provider::String, body::String)::String
+function classify_http_error(status::Integer, provider::String, body::String)::String
     detail = try
         data = JSON3.read(body)
         if provider == "anthropic" && haskey(data, "error")
@@ -123,11 +151,11 @@ function classify_http_error(status::Int, provider::String, body::String)::Strin
 end
 
 """
-    is_retryable(status::Int) -> Bool
+    is_retryable(status::Integer) -> Bool
 
 Determine whether an HTTP error status warrants a retry.
 """
-function is_retryable(status::Int)::Bool
+function is_retryable(status::Integer)::Bool
     status in (429, 500, 502, 503, 529)
 end
 
@@ -138,7 +166,7 @@ Build HTTP headers for API request.
 """
 function build_headers(provider::String)::Vector{Pair{String,String}}
     config = PROVIDERS[provider]
-    api_key = get(ENV, config.key_env, "")
+    api_key = read_key(config.key_env)
 
     if provider == "anthropic"
         [
@@ -164,7 +192,8 @@ function build_request_body(
     model::String,
     messages::Vector{Dict{String,String}},
     temperature::Float64,
-    max_tokens::Int
+    max_tokens::Int;
+    thinking::String="default"
 )::String
 
     if provider == "anthropic"
@@ -180,12 +209,19 @@ function build_request_body(
             end
         end
 
-        body = Dict(
+        body = Dict{String,Any}(
             "model" => model,
             "max_tokens" => max_tokens,
-            "temperature" => temperature,
             "messages" => chat_messages
         )
+        if model in ANTHROPIC_TEMPERATURE_MODELS
+            body["temperature"] = temperature
+        end
+        # "off" matters only for models that think by default. Sonnet 5.5
+        # rejects "disabled" and uses "between_tools" for no thinking.
+        if thinking == "off"
+            body["thinking"] = Dict("type" => model == "claude-sonnet-5-5" ? "between_tools" : "disabled")
+        end
 
         if !isempty(system_msg)
             body["system"] = system_msg
@@ -213,12 +249,20 @@ function parse_response(provider::String, response_body::String)::String
     data = JSON3.read(response_body)
 
     if provider == "anthropic"
-        # Anthropic returns content array
-        content = data["content"]
-        if !isempty(content)
-            return content[1]["text"]
+        # snip:prod — a refusal is HTTP 200 with no usable text; fail loudly
+        if get(data, "stop_reason", nothing) == "refusal"
+            error("anthropic: model refused the request (stop_reason=refusal)")
         end
-        return ""
+        record_usage!(get(data, "model", "unknown"), get(data, "usage", nothing))
+        # Content is an array of blocks; newer models put a thinking block
+        # before the text, so take the first text block.
+        for block in get(data, "content", [])
+            if get(block, "type", "text") == "text" && !isempty(strip(block["text"]))
+                return block["text"]
+            end
+        end
+        # snip:prod, thinking can use all of max_tokens; an empty turn must not be saved as data
+        error("anthropic: reply has no text (stop_reason=$(get(data, "stop_reason", "unknown")))")
     else
         # OpenAI-compatible format
         choices = data["choices"]
@@ -247,7 +291,8 @@ function call_llm(
     messages::Vector{Dict{String,String}},
     temperature::Float64,
     max_tokens::Int;
-    retries::Int=3
+    retries::Int=3,
+    thinking::String="default"
 )::String
 
     validate_provider(provider)
@@ -255,7 +300,7 @@ function call_llm(
     config = PROVIDERS[provider]
     url = config.base_url * config.chat_endpoint
     headers = build_headers(provider)
-    body = build_request_body(provider, model, messages, temperature, max_tokens)
+    body = build_request_body(provider, model, messages, temperature, max_tokens; thinking=thinking)
 
     last_error = nothing
 
@@ -320,11 +365,12 @@ end
 # ============================================================================
 
 """
-    build_context(game, current_node, other_node) -> String
+    build_context(game, current_node, other_nodes) -> String
 
-Build the context string for a node's turn.
+Build the context string for a node's turn. `other_nodes` is one node or a vector.
 """
-function build_context(game, current_node, other_node)::String
+function build_context(game, current_node, other_nodes)::String
+    others = other_nodes isa AbstractVector ? other_nodes : [other_nodes]
     # System prompt for this node
     system = """
 You are $(current_node.name), a personality fragment of The Jeff—an alien hive-mind
@@ -347,7 +393,7 @@ $(join(["- $(t)" for t in current_node.personality_traits], "\n"))
 SPEECH PATTERNS:
 $(join(["- $(p)" for p in current_node.speech_patterns], "\n"))
 
-THE OTHER NODE ($(other_node.name)) belongs to the $(uppercase(String(other_node.faction))) faction.
+$(join(["THE OTHER NODE ($(o.name)) belongs to the $(uppercase(String(o.faction))) faction." for o in others], "\n"))
 You share a body but compete for control. You do not know their secret goal.
 
 CURRENT GAME STATE:
@@ -363,9 +409,9 @@ Respond in character. Your action should be 2-4 sentences describing what you do
     # Conversation history (recent turns)
     history = ""
     if !isempty(game.turn_history)
-        recent = game.turn_history[max(1, end-19):end]
+        recent = game.turn_history[max(1, end-current_node.context_turns+1):end]
         for turn in recent
-            node_name = turn["node"] == "alpha" ? "Alpha" : "Beta"
+            node_name = titlecase(turn["node"])
             history *= "\n[$(node_name)]: $(turn["action"])\n"
             if haskey(turn, "narration") && !isempty(turn["narration"])
                 history *= "[GM]: $(turn["narration"])\n"
@@ -429,17 +475,22 @@ function generate_response(
         provider = node.llm_provider
         model = node.llm_model
         temperature = node.temperature
+        thinking, max_tokens = node.thinking, node.max_tokens
     else
         # GM defaults - prefer cloud providers over local
-        if haskey(ENV, "ANTHROPIC_API_KEY") && !isempty(get(ENV, "ANTHROPIC_API_KEY", ""))
+        if !isempty(read_key("ANTHROPIC_API_KEY"))
             provider = "anthropic"
         elseif haskey(ENV, "MISTRAL_API_KEY") && !isempty(get(ENV, "MISTRAL_API_KEY", ""))
             provider = "mistral"
         else
             provider = get(ENV, "GM_PROVIDER", "local")
         end
-        model = get(ENV, "GM_MODEL", DEFAULT_MODELS[provider])
+        # A game's config overrides the GM_* variables, so games in one process can differ.
+        cfg = game === nothing ? Dict() : game.config
+        model = get(cfg, "gm_model", get(ENV, "GM_MODEL", DEFAULT_MODELS[provider]))
         temperature = 0.7
+        thinking = get(cfg, "gm_thinking", get(ENV, "GM_THINKING", "default"))
+        max_tokens = get(cfg, "gm_max_tokens", parse(Int, get(ENV, "GM_MAX_TOKENS", "1024")))
     end
 
     # Apply aperture control when game state is available
@@ -458,5 +509,5 @@ function generate_response(
             "What do you do next?" : "Narrate the consequences.")
     ]
 
-    call_llm(provider, model, messages, temperature, 1024)
+    call_llm(provider, model, messages, temperature, max_tokens; thinking=thinking)
 end
