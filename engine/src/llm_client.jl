@@ -75,12 +75,12 @@ function validate_provider(provider::String)
 end
 
 """
-    classify_http_error(status::Int, provider::String, body::String) -> String
+    classify_http_error(status::Integer, provider::String, body::String) -> String
 
 Return a human-readable error description for an HTTP status code,
 including provider-specific error details when available.
 """
-function classify_http_error(status::Int, provider::String, body::String)::String
+function classify_http_error(status::Integer, provider::String, body::String)::String
     detail = try
         data = JSON3.read(body)
         if provider == "anthropic" && haskey(data, "error")
@@ -128,11 +128,11 @@ function classify_http_error(status::Int, provider::String, body::String)::Strin
 end
 
 """
-    is_retryable(status::Int) -> Bool
+    is_retryable(status::Integer) -> Bool
 
 Determine whether an HTTP error status warrants a retry.
 """
-function is_retryable(status::Int)::Bool
+function is_retryable(status::Integer)::Bool
     status in (429, 500, 502, 503, 529)
 end
 

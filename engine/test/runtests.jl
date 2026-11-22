@@ -473,6 +473,10 @@ using JeffEngine
             thinking_json = """{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"after thinking"}]}"""
             @test JeffEngine.parse_response("anthropic", thinking_json) == "after thinking"
 
+            # HTTP.jl reports status as Int16; error handling must accept it
+            @test JeffEngine.is_retryable(Int16(429))
+            @test occursin("Authentication", JeffEngine.classify_http_error(Int16(401), "anthropic", ""))
+
             # Refusal fails loudly
             @test_throws ErrorException JeffEngine.parse_response("anthropic", """{"stop_reason":"refusal","content":[]}""")
 
