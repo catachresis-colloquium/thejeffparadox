@@ -475,6 +475,12 @@ using JeffEngine
 
             # HTTP.jl reports status as Int16; error handling must accept it
             @test JeffEngine.is_retryable(Int16(429))
+            withenv("JEFF_ANTHROPIC_API_KEY" => "jeff", "ANTHROPIC_API_KEY" => "plain") do
+                @test JeffEngine.read_key("ANTHROPIC_API_KEY") == "jeff"
+            end
+            withenv("JEFF_ANTHROPIC_API_KEY" => nothing, "ANTHROPIC_API_KEY" => "plain") do
+                @test JeffEngine.read_key("ANTHROPIC_API_KEY") == "plain"
+            end
             @test occursin("Authentication", JeffEngine.classify_http_error(Int16(401), "anthropic", ""))
 
             # Refusal fails loudly

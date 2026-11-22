@@ -63,12 +63,18 @@ const ANTHROPIC_TEMPERATURE_MODELS = ("claude-sonnet-4-6", "claude-opus-4-6", "c
 Validate that a provider is configured and has an API key set.
 Throws ArgumentError for unknown providers and warns for missing keys.
 """
+# snip: cloud sessions withhold ANTHROPIC_API_KEY, so JEFF_ANTHROPIC_API_KEY wins when it is set.
+function read_key(env::String)::String
+    k = env == "ANTHROPIC_API_KEY" ? get(ENV, "JEFF_ANTHROPIC_API_KEY", "") : ""
+    isempty(k) ? get(ENV, env, "") : k
+end
+
 function validate_provider(provider::String)
     if !haskey(PROVIDERS, provider)
         error("Unknown LLM provider '$(provider)'. Available: $(join(keys(PROVIDERS), ", "))")
     end
     config = PROVIDERS[provider]
-    api_key = get(ENV, config.key_env, "")
+    api_key = read_key(config.key_env)
     if isempty(api_key) && provider != "local"
         @warn "API key not set for provider '$(provider)'. Set $(config.key_env) environment variable."
     end
@@ -143,7 +149,7 @@ Build HTTP headers for API request.
 """
 function build_headers(provider::String)::Vector{Pair{String,String}}
     config = PROVIDERS[provider]
-    api_key = get(ENV, config.key_env, "")
+    api_key = read_key(config.key_env)
 
     if provider == "anthropic"
         [
@@ -444,7 +450,7 @@ function generate_response(
         temperature = node.temperature
     else
         # GM defaults - prefer cloud providers over local
-        if haskey(ENV, "ANTHROPIC_API_KEY") && !isempty(get(ENV, "ANTHROPIC_API_KEY", ""))
+        if !isempty(read_key("ANTHROPIC_API_KEY"))
             provider = "anthropic"
         elseif haskey(ENV, "MISTRAL_API_KEY") && !isempty(get(ENV, "MISTRAL_API_KEY", ""))
             provider = "mistral"
