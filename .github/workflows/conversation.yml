@@ -16,13 +16,9 @@ on:
         type: number
         default: 1
       force_node:
-        description: "Force specific node (alpha/beta)"
+        description: "Force specific node (auto, or a persona id such as alpha, beta)"
         required: false
-        type: choice
-        options:
-          - auto
-          - alpha
-          - beta
+        type: string
         default: auto
       diversity_injection:
         description: "Force diversity injection"
@@ -80,8 +76,8 @@ jobs:
       - name: Build sites
         run: |
           cd orchestrator && hugo --minify --gc
-          cd ../node-alpha && hugo --minify --gc
-          cd ../node-beta && hugo --minify --gc
+          cd ..
+          for site in node-*/hugo.toml; do (cd "$(dirname "$site")" && hugo --minify --gc); done
       - name: Commit changes
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"

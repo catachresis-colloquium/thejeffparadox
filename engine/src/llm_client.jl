@@ -43,7 +43,7 @@ const PROVIDERS = Dict(
 
 # Default model names per provider — override via GM_MODEL env var
 const DEFAULT_MODELS = Dict(
-    "anthropic" => "claude-opus-5-5",
+    "anthropic" => "claude-sonnet-5-5",
     "mistral" => "mistral-large-latest",
     "local" => "qwen/qwen3-8b"
 )
@@ -51,7 +51,7 @@ const DEFAULT_MODELS = Dict(
 # Claude models that still accept a custom `temperature`. Newer models
 # (Opus 4.7+, Sonnet 5+, Haiku 5.5, Fable) return 400 on it, so it is sent only
 # to these. snip: allowlist, so an unknown model is never sent temperature.
-const ANTHROPIC_TEMPERATURE_MODELS = ("claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5")
+const ANTHROPIC_TEMPERATURE_MODELS = ("claude-sonnet-4-6", "claude-sonnet-4-5", "claude-opus-4-6", "claude-opus-4-5", "claude-haiku-4-5")
 
 # ============================================================================
 # Request Building
@@ -339,11 +339,12 @@ end
 # ============================================================================
 
 """
-    build_context(game, current_node, other_node) -> String
+    build_context(game, current_node, other_nodes) -> String
 
-Build the context string for a node's turn.
+Build the context string for a node's turn. `other_nodes` is one node or a vector.
 """
-function build_context(game, current_node, other_node)::String
+function build_context(game, current_node, other_nodes)::String
+    others = other_nodes isa AbstractVector ? other_nodes : [other_nodes]
     # System prompt for this node
     system = """
 You are $(current_node.name), a personality fragment of The Jeff—an alien hive-mind
@@ -366,7 +367,7 @@ $(join(["- $(t)" for t in current_node.personality_traits], "\n"))
 SPEECH PATTERNS:
 $(join(["- $(p)" for p in current_node.speech_patterns], "\n"))
 
-THE OTHER NODE ($(other_node.name)) belongs to the $(uppercase(String(other_node.faction))) faction.
+$(join(["THE OTHER NODE ($(o.name)) belongs to the $(uppercase(String(o.faction))) faction." for o in others], "\n"))
 You share a body but compete for control. You do not know their secret goal.
 
 CURRENT GAME STATE:
@@ -382,9 +383,9 @@ Respond in character. Your action should be 2-4 sentences describing what you do
     # Conversation history (recent turns)
     history = ""
     if !isempty(game.turn_history)
-        recent = game.turn_history[max(1, end-19):end]
+        recent = game.turn_history[max(1, end-current_node.context_turns+1):end]
         for turn in recent
-            node_name = turn["node"] == "alpha" ? "Alpha" : "Beta"
+            node_name = titlecase(turn["node"])
             history *= "\n[$(node_name)]: $(turn["action"])\n"
             if haskey(turn, "narration") && !isempty(turn["narration"])
                 history *= "[GM]: $(turn["narration"])\n"

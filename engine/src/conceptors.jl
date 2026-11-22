@@ -240,24 +240,26 @@ function detect_convergence(game, window::Int=20)::Float64
         return 0.0
     end
 
-    recent = game.turn_history[end-window+1:end]
+    vocabulary_overlap(game.turn_history[end-window+1:end])
+end
 
-    # Separate by node
-    alpha_turns = filter(t -> t["node"] == "alpha", recent)
-    beta_turns = filter(t -> t["node"] == "beta", recent)
+"""
+    vocabulary_overlap(turns, stop=Set{String}()) -> Float64
 
-    if isempty(alpha_turns) || isempty(beta_turns)
-        return 0.0
+Mean pairwise Jaccard overlap of each node's vocabulary, without `stop` words.
+0.0 when fewer than 2 nodes have turns. For 2 nodes this is the plain Jaccard index.
+"""
+function vocabulary_overlap(turns, stop=Set{String}())::Float64
+    vocab = Dict{String,Set{String}}()
+    for t in turns
+        node = get(t, "node", "")
+        isempty(node) && continue
+        union!(get!(vocab, node, Set{String}()), String.(split(lowercase(get(t, "action", "")))))
     end
-
-    # Simple vocabulary overlap measure
-    alpha_words = Set(split(lowercase(join([t["action"] for t in alpha_turns], " "))))
-    beta_words = Set(split(lowercase(join([t["action"] for t in beta_turns], " "))))
-
-    intersection = length(intersect(alpha_words, beta_words))
-    union_size = length(union(alpha_words, beta_words))
-
-    union_size > 0 ? intersection / union_size : 0.0
+    sets = [setdiff(s, stop) for s in values(vocab)]
+    pairs = [(a, b) for (i, a) in enumerate(sets) for b in sets[i+1:end]]
+    isempty(pairs) && return 0.0
+    sum(isempty(a ∪ b) ? 0.0 : length(a ∩ b) / length(a ∪ b) for (a, b) in pairs) / length(pairs)
 end
 
 """

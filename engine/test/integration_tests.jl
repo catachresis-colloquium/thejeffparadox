@@ -43,7 +43,8 @@ using JeffEngine
             speech_patterns = ["speaks in measured tones"],
             llm_provider = "local",
             llm_model = "test-model",
-            temperature = 0.8
+            temperature = 0.8,
+            context_turns = 20
         )
     end
 
@@ -110,6 +111,47 @@ using JeffEngine
         @test occursin("[Alpha]: I stare at the horizon.", ctx)
         @test occursin("[GM]: The body tenses.", ctx)
         @test occursin("[Beta]: I reach for the coffee cup.", ctx)
+    end
+
+    # ========================================================================
+    # Test: N personas (turn order, context, overlap, loading)
+    # ========================================================================
+    @testset "N personas" begin
+        @test JeffEngine.next_node(:alpha, [:beta, :alpha]) == :beta
+        @test JeffEngine.next_node(:beta, [:beta, :alpha]) == :alpha
+        @test JeffEngine.next_node(:beta, [:gamma, :alpha, :beta]) == :gamma
+        @test JeffEngine.next_node(:gamma, [:gamma, :alpha, :beta]) == :alpha
+
+        game = make_test_game()
+        alpha = make_test_node("Alpha", :homeward)
+        others = [make_test_node("Beta", :earthbound), make_test_node("Gamma", :homeward)]
+        ctx = build_context(game, alpha, others)
+        @test occursin("THE OTHER NODE (Beta) belongs to the EARTHBOUND faction.", ctx)
+        @test occursin("THE OTHER NODE (Gamma) belongs to the HOMEWARD faction.", ctx)
+
+        turns = [Dict("node" => n, "action" => "red blue") for n in ("alpha", "beta", "gamma")]
+        @test JeffEngine.vocabulary_overlap(turns) == 1.0
+        turns[3]["action"] = "green"
+        @test JeffEngine.vocabulary_overlap(turns) ≈ 1/3
+        @test JeffEngine.vocabulary_overlap(turns[1:1]) == 0.0
+
+        push!(game.turn_history, Dict("node" => "alpha", "action" => "old turn"), Dict("node" => "gamma", "action" => "new turn"))
+        short = merge(alpha, (context_turns = 1,))
+        sctx = build_context(game, short, others)
+        @test occursin("[Gamma]: new turn", sctx) && !occursin("old turn", sctx)
+
+        root = joinpath(@__DIR__, "..", "..")
+        mktempdir() do dir
+            for id in ("alpha", "beta", "gamma")
+                mkpath(joinpath(dir, "node-$id", "data"))
+                cp(joinpath(root, "node-beta", "data", "node_state.yml"), joinpath(dir, "node-$id", "data", "node_state.yml"))
+            end
+            nodes = JeffEngine.load_nodes(dir)
+            @test sort(collect(keys(nodes))) == [:alpha, :beta, :gamma]
+            @test nodes[:gamma].context_turns == 20
+            rm(joinpath(dir, "node-beta"); recursive=true); rm(joinpath(dir, "node-gamma"); recursive=true)
+            @test_throws ErrorException JeffEngine.load_nodes(dir)
+        end
     end
 
     # ========================================================================

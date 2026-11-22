@@ -37,7 +37,7 @@ personality:
 
 llm:
   provider: "anthropic"
-  model: "claude-sonnet-4-6"
+  model: "claude-sonnet-5-5"
   temperature: 0.85
   max_tokens: 1024
 
